@@ -1,0 +1,510 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "provenance": [],
+      "collapsed_sections": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python3",
+      "display_name": "Python 3"
+    },
+    "nteract": {
+      "version": "0.12.3"
+    },
+    "language_info": {
+      "name": "python"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/Myorignl/Amazon_Vine_Analysis/blob/main/Amazon_Reviews_ETL_Outdoor_reviews\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "V58rxea0HqSa",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "09a50850-2a97-49fd-91d0-924917e7b9f8"
+      },
+      "source": [
+        "# innstall java\n",
+        "!apt-get install openjdk-8-jdk-headless -qq > /dev/null\n",
+        "# install spark (change the version number if needed)\n",
+        "!wget -q https://archive.apache.org/dist/spark/spark-3.3.0/spark-3.3.0-bin-hadoop3.tgz\n",
+        "# unzip the spark file to the current folder\n",
+        "!tar xf spark-3.3.0-bin-hadoop3.tgz\n",
+        "# set your spark folder to your system path environment.\n",
+        "import os\n",
+        "os.environ[\"JAVA_HOME\"] = \"/usr/lib/jvm/java-8-openjdk-amd64\"\n",
+        "os.environ[\"SPARK_HOME\"] = \"/content/spark-3.3.0-bin-hadoop3\"\n",
+        "# install findspark using pip\n",
+        "!pip install -q findspark\n",
+        "import findspark\n",
+        "findspark.init()\n",
+        "\n",
+        "# Postgres Driver\n",
+        "!wget https://jdbc.postgresql.org/download/postgresql-42.2.16.jar"
+      ],
+      "execution_count": 11,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "--2022-10-22 04:43:30--  https://jdbc.postgresql.org/download/postgresql-42.2.16.jar\n",
+            "Resolving jdbc.postgresql.org (jdbc.postgresql.org)... 72.32.157.228, 2001:4800:3e1:1::228\n",
+            "Connecting to jdbc.postgresql.org (jdbc.postgresql.org)|72.32.157.228|:443... connected.\n",
+            "HTTP request sent, awaiting response... 200 OK\n",
+            "Length: 1002883 (979K) [application/java-archive]\n",
+            "Saving to: ‘postgresql-42.2.16.jar.1’\n",
+            "\n",
+            "postgresql-42.2.16. 100%[===================>] 979.38K  5.95MB/s    in 0.2s    \n",
+            "\n",
+            "2022-10-22 04:43:31 (5.95 MB/s) - ‘postgresql-42.2.16.jar.1’ saved [1002883/1002883]\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "MMqDAjVS0KN9"
+      },
+      "source": [
+        "from pyspark.sql import SparkSession\n",
+        "spark = SparkSession.builder.appName(\"M16-Amazon-Challenge\").config(\"spark.driver.extraClassPath\",\"/content/postgresql-42.2.16.jar\").getOrCreate()"
+      ],
+      "execution_count": 12,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "cyBsySGuY-9V"
+      },
+      "source": [
+        "### Load Amazon Data into Spark DataFrame"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "CtCmBhQJY-9Z",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "439408d2-1d93-41ad-c15f-45e7864d1b5d"
+      },
+      "source": [
+        "from pyspark import SparkFiles\n",
+        "url =\"https://s3.amazonaws.com/amazon-reviews-pds/tsv/amazon_reviews_us_Outdoors_v1_00.tsv.gz\"\n",
+        "spark.sparkContext.addFile(url)\n",
+        "df = spark.read.option(\"encoding\", \"UTF-8\").csv(SparkFiles.get(\"amazon_reviews_us_Outdoors_v1_00.tsv.gz\"), sep=\"\\t\", header=True, inferSchema=True)\n",
+        "df.show()"
+      ],
+      "execution_count": 14,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+-----------+-----------+--------------+----------+--------------+--------------------+----------------+-----------+-------------+-----------+----+-----------------+--------------------+--------------------+-------------------+\n",
+            "|marketplace|customer_id|     review_id|product_id|product_parent|       product_title|product_category|star_rating|helpful_votes|total_votes|vine|verified_purchase|     review_headline|         review_body|        review_date|\n",
+            "+-----------+-----------+--------------+----------+--------------+--------------------+----------------+-----------+-------------+-----------+----+-----------------+--------------------+--------------------+-------------------+\n",
+            "|         US|   18446823|R35T75OLUGHL5C|B000NV6H94|     110804376|Stearns Youth Boa...|        Outdoors|          4|            0|          0|   N|                Y|          Four Stars|          GOOD VALUE|2015-08-31 00:00:00|\n",
+            "|         US|   13724367|R2BV735O46BN33|B000IN0W3Y|     624096774|Primal Wear Men's...|        Outdoors|          5|            0|          0|   N|                Y|          Five Stars|  Excellent quality.|2015-08-31 00:00:00|\n",
+            "|         US|   51001958|R2NBEUGPQQGXP1|B008RBJXFM|     278970944|Osprey Hydraulics...|        Outdoors|          4|            0|          0|   N|                Y|Only Flaw Is The Cap|3rd season using ...|2015-08-31 00:00:00|\n",
+            "|         US|   32866903|R17LLAOJ8ITK0S|B00FK8WUQY|     312877650|CamelBak eddy .75...|        Outdoors|          3|            1|          1|   N|                Y|Poor design leads...|poor construction...|2015-08-31 00:00:00|\n",
+            "|         US|   30907790|R39PEQBT5ISEF4|B00EZA3VW0|     305567912|Children Black Re...|        Outdoors|          1|            0|          0|   N|                Y|Very bad quality,...|Very bad quality,...|2015-08-31 00:00:00|\n",
+            "|         US|   20232229|R3GNM3SU9VHJFT|B006JA8WEG|     842306035|Ibera Bicycle Tri...|        Outdoors|          4|            1|          1|   N|                Y|Nice bag. Should ...|Nice bag. Should ...|2015-08-31 00:00:00|\n",
+            "|         US|   17698862| R2Y81OP0EK467|B002PWFSEO|     451480122|Therm-a-Rest Comp...|        Outdoors|          5|            0|          0|   N|                Y|Very comfortable ...|Gave this to my s...|2015-08-31 00:00:00|\n",
+            "|         US|   38486114|R2LFGSI6HAYH5F|B002DZGKHW|     124386306|Sawyer Products P...|        Outdoors|          5|            1|          1|   N|                Y| Worked like a charm|Went on vacation ...|2015-08-31 00:00:00|\n",
+            "|         US|   26319572|R297G6ED1IQO7W|B00ABA08F6|     991442421|Zippo Hand Warmer...|        Outdoors|          5|            1|          1|   N|                Y|Great item. Gets ...|Great item. Gets ...|2015-08-31 00:00:00|\n",
+            "|         US|   27152337| RE27RFC6101N6|B003Z8WIHC|     886483892|Camp Chef Dutch O...|        Outdoors|          5|            0|          0|   N|                Y|Great value for t...|I am so glad I bo...|2015-08-31 00:00:00|\n",
+            "|         US|   12516845|R3BPDME6E94W8Z|B007CP6UK0|     150224054|3CERA Portable Wi...|        Outdoors|          5|            0|          0|   N|                Y|          Five Stars|        good to have|2015-08-31 00:00:00|\n",
+            "|         US|    3225242|R2P08O1RILUOX3|B003V3U9JK|     343847969|Texsport King Kot...|        Outdoors|          3|            0|          0|   N|                Y|Cot set up inconv...|VERY difficult to...|2015-08-31 00:00:00|\n",
+            "|         US|     961839|R37CVAB03PTDVI|B00Y846HN8|     858088629|Wallygadgets 2 Wh...|        Outdoors|          5|            0|          1|   N|                Y|          Five Stars|Thanks excellent ...|2015-08-31 00:00:00|\n",
+            "|         US|   47796452| RAWNWOGXPCPMD|B00IYQ84VY|     474493517|RainStoppers 34-I...|        Outdoors|          5|            0|          0|   N|                Y|          Five Stars|This umbrella is ...|2015-08-31 00:00:00|\n",
+            "|         US|   32004835| R5DYGP6ASX77M|B002MYCKLY|     920014456|Alpha Deluxe Port...|        Outdoors|          5|            0|          0|   N|                Y|          Five Stars|Love it !! I even...|2015-08-31 00:00:00|\n",
+            "|         US|   23972939|R1O0SAOOGF2KG7|B00EZV69JG|     128489321|Speedfil Z4 BTA B...|        Outdoors|          4|            0|          0|   N|                Y|        Good enough.|This is a fine mo...|2015-08-31 00:00:00|\n",
+            "|         US|   40889047|R35NJUT0U3MU3V|B00AWOT3T8|     571303876|O'Brien Kids Plat...|        Outdoors|          5|            0|          0|   N|                Y| Got Up on First Try|We just bought th...|2015-08-31 00:00:00|\n",
+            "|         US|   11244387|R242C08MF9D1AH|B0000AXTID|     739769424|Kwik-Tek F-5R Pla...|        Outdoors|          5|            0|          0|   N|                Y|They go over an a...|I have these on m...|2015-08-31 00:00:00|\n",
+            "|         US|   20121211| R3RYG8TJTO4E2|B00IFHFJXI|     984009972|Ivation Portable ...|        Outdoors|          5|            0|          0|   N|                Y|Greatest Item I b...|This is the best ...|2015-08-31 00:00:00|\n",
+            "|         US|   25657249|R3IKH1DNY0CP9F|B00KFILTWU|     405521681|GreenInsync Repla...|        Outdoors|          2|            0|          0|   N|                Y|I received this p...|I received this p...|2015-08-31 00:00:00|\n",
+            "+-----------+-----------+--------------+----------+--------------+--------------------+----------------+-----------+-------------+-----------+----+-----------------+--------------------+--------------------+-------------------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "2yUSe55VY-9t"
+      },
+      "source": [
+        "### Create DataFrames to match tables"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "C8REmY1aY-9u",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "d1f20d37-8939-4178-e863-e93d458aa778"
+      },
+      "source": [
+        "from pyspark.sql.functions import to_date\n",
+        "# Read in the Review dataset as a DataFrame\n",
+        "review_df = df.select([\"review_id\",\"customer_id\",\"product_id\",\"product_parent\",\"product_title\",\"review_date\",\"star_rating\",\"helpful_votes\",\"total_votes\",\"vine\",\"verified_purchase\"])\n",
+        "review_df.show()\n"
+      ],
+      "execution_count": 15,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+--------------+-----------+----------+--------------+--------------------+-------------------+-----------+-------------+-----------+----+-----------------+\n",
+            "|     review_id|customer_id|product_id|product_parent|       product_title|        review_date|star_rating|helpful_votes|total_votes|vine|verified_purchase|\n",
+            "+--------------+-----------+----------+--------------+--------------------+-------------------+-----------+-------------+-----------+----+-----------------+\n",
+            "|R35T75OLUGHL5C|   18446823|B000NV6H94|     110804376|Stearns Youth Boa...|2015-08-31 00:00:00|          4|            0|          0|   N|                Y|\n",
+            "|R2BV735O46BN33|   13724367|B000IN0W3Y|     624096774|Primal Wear Men's...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R2NBEUGPQQGXP1|   51001958|B008RBJXFM|     278970944|Osprey Hydraulics...|2015-08-31 00:00:00|          4|            0|          0|   N|                Y|\n",
+            "|R17LLAOJ8ITK0S|   32866903|B00FK8WUQY|     312877650|CamelBak eddy .75...|2015-08-31 00:00:00|          3|            1|          1|   N|                Y|\n",
+            "|R39PEQBT5ISEF4|   30907790|B00EZA3VW0|     305567912|Children Black Re...|2015-08-31 00:00:00|          1|            0|          0|   N|                Y|\n",
+            "|R3GNM3SU9VHJFT|   20232229|B006JA8WEG|     842306035|Ibera Bicycle Tri...|2015-08-31 00:00:00|          4|            1|          1|   N|                Y|\n",
+            "| R2Y81OP0EK467|   17698862|B002PWFSEO|     451480122|Therm-a-Rest Comp...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R2LFGSI6HAYH5F|   38486114|B002DZGKHW|     124386306|Sawyer Products P...|2015-08-31 00:00:00|          5|            1|          1|   N|                Y|\n",
+            "|R297G6ED1IQO7W|   26319572|B00ABA08F6|     991442421|Zippo Hand Warmer...|2015-08-31 00:00:00|          5|            1|          1|   N|                Y|\n",
+            "| RE27RFC6101N6|   27152337|B003Z8WIHC|     886483892|Camp Chef Dutch O...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R3BPDME6E94W8Z|   12516845|B007CP6UK0|     150224054|3CERA Portable Wi...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R2P08O1RILUOX3|    3225242|B003V3U9JK|     343847969|Texsport King Kot...|2015-08-31 00:00:00|          3|            0|          0|   N|                Y|\n",
+            "|R37CVAB03PTDVI|     961839|B00Y846HN8|     858088629|Wallygadgets 2 Wh...|2015-08-31 00:00:00|          5|            0|          1|   N|                Y|\n",
+            "| RAWNWOGXPCPMD|   47796452|B00IYQ84VY|     474493517|RainStoppers 34-I...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "| R5DYGP6ASX77M|   32004835|B002MYCKLY|     920014456|Alpha Deluxe Port...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R1O0SAOOGF2KG7|   23972939|B00EZV69JG|     128489321|Speedfil Z4 BTA B...|2015-08-31 00:00:00|          4|            0|          0|   N|                Y|\n",
+            "|R35NJUT0U3MU3V|   40889047|B00AWOT3T8|     571303876|O'Brien Kids Plat...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R242C08MF9D1AH|   11244387|B0000AXTID|     739769424|Kwik-Tek F-5R Pla...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "| R3RYG8TJTO4E2|   20121211|B00IFHFJXI|     984009972|Ivation Portable ...|2015-08-31 00:00:00|          5|            0|          0|   N|                Y|\n",
+            "|R3IKH1DNY0CP9F|   25657249|B00KFILTWU|     405521681|GreenInsync Repla...|2015-08-31 00:00:00|          2|            0|          0|   N|                Y|\n",
+            "+--------------+-----------+----------+--------------+--------------------+-------------------+-----------+-------------+-----------+----+-----------------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "B0TESUDRY-90",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "89dbc98b-9731-4334-999b-e6eb924a2192"
+      },
+      "source": [
+        "# Create the customers_table DataFrame\n",
+        "\n",
+        "customers_df = review_df.groupby(\"customer_id\").agg({\"customer_id\":\"count\"}).withColumnRenamed(\"count(customer_id)\",\"customer_count\")\n",
+        "customers_df.show()"
+      ],
+      "execution_count": 16,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+-----------+--------------+\n",
+            "|customer_id|customer_count|\n",
+            "+-----------+--------------+\n",
+            "|   43679767|             1|\n",
+            "|   32024654|             1|\n",
+            "|   52913169|             1|\n",
+            "|   24297214|             1|\n",
+            "|   26096454|             1|\n",
+            "|   38247118|             1|\n",
+            "|   44009906|             1|\n",
+            "|    1753876|             1|\n",
+            "|   26195644|             1|\n",
+            "|   23042837|             1|\n",
+            "|   11487525|             2|\n",
+            "|   28258386|             1|\n",
+            "|   42560427|             2|\n",
+            "|   24540309|             1|\n",
+            "|    1967239|             1|\n",
+            "|   14217455|             1|\n",
+            "|   20289484|            26|\n",
+            "|   47103434|             1|\n",
+            "|   28638887|             1|\n",
+            "|     740678|             1|\n",
+            "+-----------+--------------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "4FwXA6UvY-96",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "d1844eb5-12ae-4f35-8313-5d1d66b5ca43"
+      },
+      "source": [
+        "# Create the products_table DataFrame and drop duplicates. \n",
+        "products_df = review_df.select([\"product_id\",\"product_title\"]).drop_duplicates([\"product_id\"])\n",
+        "products_df.show()"
+      ],
+      "execution_count": 17,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+----------+--------------------+\n",
+            "|product_id|       product_title|\n",
+            "+----------+--------------------+\n",
+            "|0316287229|Bike Pedals for K...|\n",
+            "|059445039X|Blackwatch Plaid ...|\n",
+            "|0743609972|Maptech ChartKit®...|\n",
+            "|078341384X|Three Sisters Wil...|\n",
+            "|097794350X|Voyageur Map Numb...|\n",
+            "|098368474X|Geotagging Media:...|\n",
+            "|0985193980|Guide to the Alle...|\n",
+            "|1389475913|Flexible Bike Cyc...|\n",
+            "|1411324382|America the Beaut...|\n",
+            "|1561559571|NEW SUREFIRE G2X-...|\n",
+            "|1566956005|National Geograph...|\n",
+            "|1578351502|California, Northern|\n",
+            "|1593510144|St. Joe National ...|\n",
+            "|1593510233|Flathead National...|\n",
+            "|1593510942|Bob Marshall, Gre...|\n",
+            "|1593511302|Bighorn National ...|\n",
+            "|1593513100|Frank Church Rive...|\n",
+            "|1593513356|Toiyabe National ...|\n",
+            "|1593514530|Map: Plumas Natio...|\n",
+            "|1593515499|Olympic National ...|\n",
+            "+----------+--------------------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "MkqyCuNQY-9-",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "2f1070e9-b1d8-4775-8e1f-799fd5b80139"
+      },
+      "source": [
+        "# Create the review_id_table DataFrame. \n",
+        "# Convert the 'review_date' column to a date datatype with to_date(\"review_date\", 'yyyy-MM-dd').alias(\"review_date\")\n",
+        "# review_id_df = df.select([, to_date(\"review_date\", 'yyyy-MM-dd').alias(\"review_date\")])\n",
+        "\n",
+        "review_id_df = df.select(['review_id','customer_id','product_id','product_parent',to_date('review_date','yyyy-MM-dd').alias(\"review_date\")])\n",
+        "review_id_df.show()\n"
+      ],
+      "execution_count": 18,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+--------------+-----------+----------+--------------+-----------+\n",
+            "|     review_id|customer_id|product_id|product_parent|review_date|\n",
+            "+--------------+-----------+----------+--------------+-----------+\n",
+            "|R35T75OLUGHL5C|   18446823|B000NV6H94|     110804376| 2015-08-31|\n",
+            "|R2BV735O46BN33|   13724367|B000IN0W3Y|     624096774| 2015-08-31|\n",
+            "|R2NBEUGPQQGXP1|   51001958|B008RBJXFM|     278970944| 2015-08-31|\n",
+            "|R17LLAOJ8ITK0S|   32866903|B00FK8WUQY|     312877650| 2015-08-31|\n",
+            "|R39PEQBT5ISEF4|   30907790|B00EZA3VW0|     305567912| 2015-08-31|\n",
+            "|R3GNM3SU9VHJFT|   20232229|B006JA8WEG|     842306035| 2015-08-31|\n",
+            "| R2Y81OP0EK467|   17698862|B002PWFSEO|     451480122| 2015-08-31|\n",
+            "|R2LFGSI6HAYH5F|   38486114|B002DZGKHW|     124386306| 2015-08-31|\n",
+            "|R297G6ED1IQO7W|   26319572|B00ABA08F6|     991442421| 2015-08-31|\n",
+            "| RE27RFC6101N6|   27152337|B003Z8WIHC|     886483892| 2015-08-31|\n",
+            "|R3BPDME6E94W8Z|   12516845|B007CP6UK0|     150224054| 2015-08-31|\n",
+            "|R2P08O1RILUOX3|    3225242|B003V3U9JK|     343847969| 2015-08-31|\n",
+            "|R37CVAB03PTDVI|     961839|B00Y846HN8|     858088629| 2015-08-31|\n",
+            "| RAWNWOGXPCPMD|   47796452|B00IYQ84VY|     474493517| 2015-08-31|\n",
+            "| R5DYGP6ASX77M|   32004835|B002MYCKLY|     920014456| 2015-08-31|\n",
+            "|R1O0SAOOGF2KG7|   23972939|B00EZV69JG|     128489321| 2015-08-31|\n",
+            "|R35NJUT0U3MU3V|   40889047|B00AWOT3T8|     571303876| 2015-08-31|\n",
+            "|R242C08MF9D1AH|   11244387|B0000AXTID|     739769424| 2015-08-31|\n",
+            "| R3RYG8TJTO4E2|   20121211|B00IFHFJXI|     984009972| 2015-08-31|\n",
+            "|R3IKH1DNY0CP9F|   25657249|B00KFILTWU|     405521681| 2015-08-31|\n",
+            "+--------------+-----------+----------+--------------+-----------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "lzMmkdKmY--D",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "e892be63-d3ad-4cd0-d710-eb8646cccf54"
+      },
+      "source": [
+        "# Create the vine_table. DataFrame\n",
+        "vine_df = df.select(['review_id','star_rating','helpful_votes','total_votes','vine','verified_purchase'])\n",
+        "vine_df.show()"
+      ],
+      "execution_count": 19,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "+--------------+-----------+-------------+-----------+----+-----------------+\n",
+            "|     review_id|star_rating|helpful_votes|total_votes|vine|verified_purchase|\n",
+            "+--------------+-----------+-------------+-----------+----+-----------------+\n",
+            "|R35T75OLUGHL5C|          4|            0|          0|   N|                Y|\n",
+            "|R2BV735O46BN33|          5|            0|          0|   N|                Y|\n",
+            "|R2NBEUGPQQGXP1|          4|            0|          0|   N|                Y|\n",
+            "|R17LLAOJ8ITK0S|          3|            1|          1|   N|                Y|\n",
+            "|R39PEQBT5ISEF4|          1|            0|          0|   N|                Y|\n",
+            "|R3GNM3SU9VHJFT|          4|            1|          1|   N|                Y|\n",
+            "| R2Y81OP0EK467|          5|            0|          0|   N|                Y|\n",
+            "|R2LFGSI6HAYH5F|          5|            1|          1|   N|                Y|\n",
+            "|R297G6ED1IQO7W|          5|            1|          1|   N|                Y|\n",
+            "| RE27RFC6101N6|          5|            0|          0|   N|                Y|\n",
+            "|R3BPDME6E94W8Z|          5|            0|          0|   N|                Y|\n",
+            "|R2P08O1RILUOX3|          3|            0|          0|   N|                Y|\n",
+            "|R37CVAB03PTDVI|          5|            0|          1|   N|                Y|\n",
+            "| RAWNWOGXPCPMD|          5|            0|          0|   N|                Y|\n",
+            "| R5DYGP6ASX77M|          5|            0|          0|   N|                Y|\n",
+            "|R1O0SAOOGF2KG7|          4|            0|          0|   N|                Y|\n",
+            "|R35NJUT0U3MU3V|          5|            0|          0|   N|                Y|\n",
+            "|R242C08MF9D1AH|          5|            0|          0|   N|                Y|\n",
+            "| R3RYG8TJTO4E2|          5|            0|          0|   N|                Y|\n",
+            "|R3IKH1DNY0CP9F|          2|            0|          0|   N|                Y|\n",
+            "+--------------+-----------+-------------+-----------+----+-----------------+\n",
+            "only showing top 20 rows\n",
+            "\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "jITZhLkmY--J"
+      },
+      "source": [
+        "### Connect to the AWS RDS instance and write each DataFrame to its table. "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "7jiUvs1aY--L",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "0f34c294-27e4-45ea-fe54-11cc3ea7ab17"
+      },
+      "source": [
+        "# Store environmental variable\n",
+        "from getpass import getpass\n",
+        "password = getpass('password')\n",
+        "# Configure settings for RDS\n",
+        "mode = \"append\"\n",
+        "jdbc_url=\"jdbc:postgresql://dorthydb.cq6ychvqqprd.us-west-1.rds.amazonaws.com:5432/mydata\"\n",
+        "config = {\"user\":\"DorthyR\",\n",
+        "          \"password\": password,\n",
+        "          \"driver\":\"org.postgresql.Driver\"}"
+      ],
+      "execution_count": 20,
+      "outputs": [
+        {
+          "name": "stdout",
+          "output_type": "stream",
+          "text": [
+            "password··········\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "T2zgZ-aKY--Q"
+      },
+      "source": [
+        "# Write review_id_df to table in RDS\n",
+        "review_id_df.write.jdbc(url=jdbc_url, table='review_id_table', mode=mode, properties=config)"
+      ],
+      "execution_count": 27,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Write products_df to table in RDS\n",
+        "# about 3 min\n",
+        "products_df.write.jdbc(url=jdbc_url, table='products_table', mode=mode, properties=config)"
+      ],
+      "metadata": {
+        "id": "BOWXlmvnhAAb"
+      },
+      "execution_count": 23,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Write customers_df to table in RDS\n",
+        "# 5 min 14 s\n",
+        "customers_df.write.jdbc(url=jdbc_url, table='customers_table', mode=mode, properties=config)"
+      ],
+      "metadata": {
+        "id": "cCqi-yXcg7ml"
+      },
+      "execution_count": 25,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {
+        "id": "HpxB_yXDg2kg"
+      },
+      "source": [
+        "# Write vine_df to table in RDS\n",
+        "# 11 minutes\n",
+        "vine_df.write.jdbc(url=jdbc_url, table='vine_table', mode=mode, properties=config)"
+      ],
+      "execution_count": 26,
+      "outputs": []
+    }
+  ]
+}
