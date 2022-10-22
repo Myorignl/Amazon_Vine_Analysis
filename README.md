@@ -60,7 +60,7 @@ To Complete this deliverable I chose PG Admin to conduct my analysis. The object
 ## Findings
 
 Based on the data analysis the total reviews recieved where 2302401, 62%  of all the reviews recieved a five (5) star raiting. 
-When we compare the paid services makes up less than 1% of the five (5)stars reviews. Non paid reiewers make up 99.88% of the five (5)star reviews. My determination is that there is no higher rating for paid service. 
+When we compare the paid services makes up less than 1% of the five (5)stars reviews. Non-paid reiewers make up 99.88% of the five (5)star reviews. My determination is that there is no bias for paid service vs unpaid.
 
 
 
